@@ -6,63 +6,120 @@
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 #define OLED_RESET -1
-#define OLED_ADDR 0x3C
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-/* ================= BITMAP ================= */
-// 64x64 bitmap (punyamu)
-const unsigned char epd_bitmap_images[] PROGMEM = {
-  // --- ISI BITMAP KAMU DI SINI ---
-  // (yang sudah kamu kirim, tidak aku ubah)
+/*
+  LOGO BITMAP
+  48x48
+  MONO - VERTICAL - NO SWAP
+  Dibuat khusus biar RAPI di OLED
+*/
+const unsigned char logo_bitmap[] PROGMEM = {
+  0x00,0x00,0x00,0x00,0x00,0x00,
+  0x00,0x00,0x18,0x18,0x00,0x00,
+  0x00,0x00,0x3C,0x3C,0x00,0x00,
+  0x00,0x00,0x7E,0x7E,0x00,0x00,
+  0x00,0x00,0xE7,0xE7,0x00,0x00,
+  0x00,0x01,0xC3,0xC3,0x80,0x00,
+  0x00,0x03,0x81,0x81,0xC0,0x00,
+  0x00,0x07,0x00,0x00,0xE0,0x00,
+  0x00,0x0E,0x00,0x00,0x70,0x00,
+  0x00,0x1C,0x00,0x00,0x38,0x00,
+  0x00,0x38,0x00,0x00,0x1C,0x00,
+  0x00,0x70,0x00,0x00,0x0E,0x00,
+  0x00,0xE0,0x00,0x00,0x07,0x00,
+  0x01,0xC0,0x00,0x00,0x03,0x80,
+  0x03,0x80,0x00,0x00,0x01,0xC0,
+  0x07,0x00,0x00,0x00,0x00,0xE0,
+  0x03,0x80,0x00,0x00,0x01,0xC0,
+  0x01,0xC0,0x00,0x00,0x03,0x80,
+  0x00,0xE0,0x00,0x00,0x07,0x00,
+  0x00,0x70,0x00,0x00,0x0E,0x00,
+  0x00,0x38,0x00,0x00,0x1C,0x00,
+  0x00,0x1C,0x00,0x00,0x38,0x00,
+  0x00,0x0E,0x00,0x00,0x70,0x00,
+  0x00,0x07,0x00,0x00,0xE0,0x00,
+  0x00,0x03,0x81,0x81,0xC0,0x00,
+  0x00,0x01,0xC3,0xC3,0x80,0x00,
+  0x00,0x00,0xE7,0xE7,0x00,0x00,
+  0x00,0x00,0x7E,0x7E,0x00,0x00,
+  0x00,0x00,0x3C,0x3C,0x00,0x00,
+  0x00,0x00,0x18,0x18,0x00,0x00,
+  0x00,0x00,0x00,0x00,0x00,0x00,
 };
 
-/* ================ FUNGSI ================ */
-
-void showLogo() {
+/* ===== BOOT LOGO ===== */
+void showBootLogo() {
   display.clearDisplay();
-  display.drawBitmap(32, 0, epd_bitmap_images, 64, 64, SSD1306_WHITE);
-  display.display();
-}
 
-void showMenu() {
-  display.clearDisplay();
+  display.drawBitmap(
+    (SCREEN_WIDTH - 48) / 2,
+    0,
+    logo_bitmap,
+    48,
+    48,
+    SSD1306_WHITE
+  );
 
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
-  display.setCursor(0, 0);
-  display.println("== MAIN MENU ==");
+  const char* brand = "Mercedes-Benz";
+  int16_t x1, y1;
+  uint16_t w, h;
+  display.getTextBounds(brand, 0, 0, &x1, &y1, &w, &h);
+  display.setCursor((SCREEN_WIDTH - w) / 2, 52);
+  display.print(brand);
 
-  display.setCursor(0, 16);
-  display.println("1. Status");
+  display.display();
+  delay(3000);
+}
+
+/* ===== HUD MENU ===== */
+void showHud() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+
+  display.setCursor(0, 0);
+  display.print("SPD");
+  display.setCursor(28, 0);
+  display.print("0 km/h");
+
+  display.setCursor(90, 0);
+  display.print("READY");
+
+  display.drawLine(0, 10, 127, 10, SSD1306_WHITE);
+
+  display.setCursor(0, 14);
+  display.print("RPM  : 0000");
 
   display.setCursor(0, 26);
-  display.println("2. Setting");
+  display.print("TEMP : 27 C");
 
-  display.setCursor(0, 36);
-  display.println("3. About");
+  display.setCursor(0, 38);
+  display.print("VOLT : 12.3 V");
+
+  display.drawLine(0, 50, 127, 50, SSD1306_WHITE);
+
+  display.setCursor(36, 54);
+  display.print("SYSTEM OK");
 
   display.display();
 }
 
-/* ================= SETUP ================= */
-
 void setup() {
-  Wire.begin(D2, D1); // SDA, SCL (WAJIB buat Wemos)
+  delay(300);
+  Wire.begin(D2, D1);
 
-  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
-    while (true); // stop kalau OLED gagal
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    while (1);
   }
 
-  // === SPLASH SCREEN ===
-  showLogo();
-  delay(3000);   // 3 detik statis
-
-  // === MASUK MENU ===
-  showMenu();
+  showBootLogo();
+  showHud();
 }
 
 void loop() {
-  // nanti isi navigasi menu di sini
 }
