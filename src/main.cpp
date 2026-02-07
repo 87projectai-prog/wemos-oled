@@ -4,7 +4,7 @@
 #include <math.h>
 #include "mercedes_logo.h"
 
-// OLED settings
+// OLED setup
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 #define OLED_RESET -1
@@ -29,14 +29,14 @@ unsigned long lastBlink = 0;
 bool blinkState = false;
 long odometer = 0;
 
-// Map voltage to percentage
+// Convert voltage to %
 int voltageToPercent(float voltage, float minV, float maxV){
   if(voltage<minV) voltage=minV;
   if(voltage>maxV) voltage=maxV;
   return (int)((voltage-minV)*100.0/(maxV-minV));
 }
 
-// Booting animation
+// Booting logo
 void bootingLogo(){
   display.clearDisplay();
   display.drawBitmap(48,0, mercedesLogo, 32,32, SSD1306_WHITE);
@@ -68,14 +68,14 @@ void loop(){
     lastBlink = currentMillis;
   }
 
-  // Baca sensor nyata
+  // Sensor nyata
   float fuelVoltage = analogRead(PIN_FUEL)*(3.3/1023.0);
   fuel = voltageToPercent(fuelVoltage, 0.3, 2.7);
 
   float battVoltage = analogRead(PIN_BATT)*(3.3/1023.0);
   battery = voltageToPercent(battVoltage, 2.9, 3.3);
 
-  // Input lampu sein & pintu
+  // Lampu sein & pintu
   leftSignal = !digitalRead(PIN_LEFT_SIGNAL) && blinkState;
   rightSignal = !digitalRead(PIN_RIGHT_SIGNAL) && blinkState;
   doorOpen = !digitalRead(PIN_DOOR);
@@ -83,7 +83,7 @@ void loop(){
   // Simulasi speed & RPM
   speed = (speed+1)%120;
   rpm = (rpm+50)%4000;
-  odometer += speed/100; // simulasi km
+  odometer += speed/100;
 
   // Clear display
   display.clearDisplay();
@@ -113,12 +113,11 @@ void loop(){
   display.setCursor(centerX-10,centerY+10);
   display.print("RPM");
 
-  // Fuel bar
+  // Fuel & Battery bars
   display.drawRect(0,55,64,8,SSD1306_WHITE);
   display.fillRect(0,55,fuel*64/100,8,SSD1306_WHITE);
   display.setCursor(0,46); display.print("FUEL");
 
-  // Battery bar
   display.drawRect(70,55,58,8,SSD1306_WHITE);
   display.fillRect(70,55,battery*58/100,8,SSD1306_WHITE);
   display.setCursor(70,46); display.print("BATT");
