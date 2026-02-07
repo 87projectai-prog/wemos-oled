@@ -1,243 +1,140 @@
-#include <Arduino.h>
-#include <ESP8266WiFi.h>
-#include <ESP8266WebServer.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <math.h>
+#include "mercedes_logo.h"
 
-/* ================= OLED ================= */
+// OLED settings
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
-#define OLED_ADDR 0x3C
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+#define OLED_RESET -1
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-/* ================= WIFI ================= */
-ESP8266WebServer server(80);
-const char* AP_NAME = "Leicha Nav";   // Nama AP
+// Input pins
+#define PIN_FUEL A0
+#define PIN_BATT A0
+#define PIN_LEFT_SIGNAL D5
+#define PIN_RIGHT_SIGNAL D6
+#define PIN_DOOR D7
 
-/* ================= NAV DATA ================= */
-String navDir  = "STRAIGHT"; // LEFT, RIGHT, UTURN, STRAIGHT
-int    navDist = 0;
-String navRoad = "";
+// HUD variables
+int speed = 0;
+int rpm = 0;
+int fuel = 100;
+int battery = 100;
+bool leftSignal = false;
+bool rightSignal = false;
+bool doorOpen = false;
+unsigned long lastBlink = 0;
+bool blinkState = false;
+long odometer = 0;
 
-/* ================= FUNCTION DECLARATION ================= */
-void drawMercedesHUDBoot();
-void drawMainMenuAnimated();
-void drawArrowAnimated();
-void drawArrowStatic();
+// Map voltage to percentage
+int voltageToPercent(float voltage, float minV, float maxV){
+  if(voltage<minV) voltage=minV;
+  if(voltage>maxV) voltage=maxV;
+  return (int)((voltage-minV)*100.0/(maxV-minV));
+}
 
-/* ================= BOOT HUD MERCEDES REAL ================= */
-void drawMercedesHUDBoot() {
+// Booting animation
+void bootingLogo(){
   display.clearDisplay();
-  int cx = 64, cy = 30; // posisi awal logo
-  int radius = 18;
-
-  // STEP 1: Layar hitam
-  display.clearDisplay();
-  display.display();
-  delay(500);
-
-  // STEP 2: Logo muncul garis demi garis
-  display.drawCircle(cx, cy, radius, SSD1306_WHITE);
-  display.display();
-  delay(200);
-
-  display.drawLine(cx, cy, cx, cy - radius, SSD1306_WHITE); // atas
-  display.display();
-  delay(150);
-
-  display.drawLine(cx, cy, cx - radius + 5, cy + radius - 4, SSD1306_WHITE); // kiri bawah
-  display.display();
-  delay(150);
-
-  display.drawLine(cx, cy, cx + radius - 5, cy + radius - 4, SSD1306_WHITE); // kanan bawah
-  display.display();
-  delay(150);
-
-  // STEP 3: Teks MERCEDES BENZ fade-in
-  String text = "MERCEDES BENZ";
+  display.drawBitmap(48,0, mercedesLogo, 32,32, SSD1306_WHITE);
   display.setTextSize(1);
-  for (int step = 0; step <= text.length(); step++) {
-    display.clearDisplay();
-    display.drawCircle(cx, cy, radius, SSD1306_WHITE);
-    display.drawLine(cx, cy, cx, cy - radius, SSD1306_WHITE);
-    display.drawLine(cx, cy, cx - radius + 5, cy + radius - 4, SSD1306_WHITE);
-    display.drawLine(cx, cy, cx + radius - 5, cy + radius - 4, SSD1306_WHITE);
-
-    display.setCursor(22, 52);
-    for (int i = 0; i < step; i++) display.print(text[i]);
-
-    display.display();
-    delay(120);
-  }
-
-  // STEP 4: Logo slide ke atas
-  for (int shift = 0; shift <= 12; shift++) {
-    display.clearDisplay();
-    display.drawCircle(cx, cy - shift, radius, SSD1306_WHITE);
-    display.drawLine(cx, cy - shift, cx, cy - radius - shift, SSD1306_WHITE);
-    display.drawLine(cx, cy - shift, cx - radius + 5, cy + radius - 4 - shift, SSD1306_WHITE);
-    display.drawLine(cx, cy - shift, cx + radius - 5, cy + radius - 4 - shift, SSD1306_WHITE);
-
-    display.setCursor(22, 52 - shift);
-    display.print("MERCEDES BENZ");
-
-    display.display();
-    delay(80);
-  }
-
-  // STEP 5: Main menu HUD muncul
-  drawMainMenuAnimated();
+  display.setCursor(28,40);
+  display.print("Mercedes-Benz Bus");
+  display.display();
+  delay(3000);
 }
 
-/* ================= MAIN MENU HUD ANIMASI ================= */
-void drawMainMenuAnimated() {
-  display.clearDisplay();
-
-  // Header muncul dari atas
-  for (int y = -8; y <= 0; y++) {
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setCursor(0, y);
-    display.print("MERCEDES HUD");
-    display.drawLine(0, 10 + y, 128, 10 + y, SSD1306_WHITE);
-    display.display();
-    delay(40);
-  }
-
-  // Teks NAV READY, WiFi, WAITING DATA muncul satu per satu
-  String lines[3] = {"NAV READY", "WiFi: " + String(AP_NAME), "WAITING DATA"};
-  for (int i = 0; i < 3; i++) {
-    display.setCursor(0, 22 + i * 12);
-    display.print(lines[i]);
-    display.display();
-    delay(150);
-  }
-}
-
-/* ================= ARROW HUD ANIMASI ================= */
-void drawArrowAnimated() {
-  display.clearDisplay();
-  int cx = 64, cy = 32;
-  int arrowSize = 24;
-
-  // STEP 1: arrow fade-in
-  for (int step = 0; step <= 10; step++) {
-    display.clearDisplay();
-
-    if (navDir == "LEFT") {
-      int x1 = cx, y1 = cy;
-      int x2 = cx - arrowSize * step / 10, y2 = cy - arrowSize * step / 10;
-      int x3 = cx, y3 = cy + arrowSize * step / 10;
-      display.drawLine(x1, y1, x2, y2, SSD1306_WHITE);
-      display.drawLine(x2, y2, x3, y3, SSD1306_WHITE);
-    } 
-    else if (navDir == "RIGHT") {
-      int x1 = cx, y1 = cy;
-      int x2 = cx + arrowSize * step / 10, y2 = cy - arrowSize * step / 10;
-      int x3 = cx, y3 = cy + arrowSize * step / 10;
-      display.drawLine(x1, y1, x2, y2, SSD1306_WHITE);
-      display.drawLine(x2, y2, x3, y3, SSD1306_WHITE);
-    } 
-    else if (navDir == "UTURN") {
-      int radius = arrowSize * step / 10;
-      display.drawCircle(cx, cy, radius, SSD1306_WHITE);
-      display.drawLine(cx, cy - radius, cx, cy - radius - 4, SSD1306_WHITE);
-    } 
-    else { // STRAIGHT
-      display.drawLine(cx, cy + arrowSize/2, cx, cy - arrowSize/2 * step / 10, SSD1306_WHITE);
-      display.drawLine(cx, cy - arrowSize/2 * step / 10, cx - 6, cy - arrowSize/2 * step / 10 + 8, SSD1306_WHITE);
-      display.drawLine(cx, cy - arrowSize/2 * step / 10, cx + 6, cy - arrowSize/2 * step / 10 + 8, SSD1306_WHITE);
-    }
-
-    display.setTextSize(1);
-    display.setCursor(42, 50);
-    display.print(navDist);
-    display.print(" m");
-
-    display.setCursor(0, 58);
-    display.print(navRoad);
-
-    display.display();
-    delay(50);
-  }
-
-  // STEP 2: efek blink arrow
-  for (int i = 0; i < 3; i++) {
-    display.clearDisplay();
-    drawArrowStatic();
-    display.setTextSize(1);
-    display.setCursor(42, 50);
-    display.print(navDist);
-    display.print(" m");
-    display.setCursor(0, 58);
-    display.print(navRoad);
-    display.display();
-    delay(200);
-
-    display.clearDisplay();
-    display.display();
-    delay(100);
-  }
-}
-
-/* ================= ARROW HUD STATIC ================= */
-void drawArrowStatic() {
-  int cx = 64, cy = 32;
-  if (navDir == "LEFT") {
-    display.drawLine(cx, cy, cx - 32, cy - 24, SSD1306_WHITE);
-    display.drawLine(cx - 32, cy - 24, cx, cy + 24, SSD1306_WHITE);
-  } 
-  else if (navDir == "RIGHT") {
-    display.drawLine(cx, cy, cx + 32, cy - 24, SSD1306_WHITE);
-    display.drawLine(cx + 32, cy - 24, cx, cy + 24, SSD1306_WHITE);
-  } 
-  else if (navDir == "UTURN") {
-    display.drawCircle(cx, cy, 16, SSD1306_WHITE);
-    display.drawLine(cx, cy - 16, cx, cy - 26, SSD1306_WHITE);
-  } 
-  else { // STRAIGHT
-    display.drawLine(cx, cy + 16, cx, cy - 16, SSD1306_WHITE);
-    display.drawLine(cx, cy - 16, cx - 6, cy - 8, SSD1306_WHITE);
-    display.drawLine(cx, cy - 16, cx + 6, cy - 8, SSD1306_WHITE);
-  }
-}
-
-/* ================= SETUP ================= */
-void setup() {
+void setup(){
   Serial.begin(115200);
-  delay(100);
-  Wire.begin(D2, D1);
+  pinMode(PIN_LEFT_SIGNAL, INPUT_PULLUP);
+  pinMode(PIN_RIGHT_SIGNAL, INPUT_PULLUP);
+  pinMode(PIN_DOOR, INPUT_PULLUP);
 
-  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
-    Serial.println("OLED FAIL");
-    while (true);
+  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)){
+    Serial.println(F("SSD1306 allocation failed"));
+    for(;;);
   }
 
-  drawMercedesHUDBoot();
-
-  // Paksa WIFI AP
-  WiFi.disconnect(true);
-  delay(100);
-  WiFi.mode(WIFI_AP);
-  delay(100);
-  WiFi.softAP(AP_NAME);
-  Serial.println("AP STARTED");
-  Serial.println(WiFi.softAPIP());
-
-  // Web server
-  server.on("/nav", []() {
-    if (server.hasArg("dir"))  navDir  = server.arg("dir");
-    if (server.hasArg("dist")) navDist = server.arg("dist").toInt();
-    if (server.hasArg("road")) navRoad = server.arg("road");
-
-    drawArrowAnimated();
-    server.send(200, "text/plain", "OK");
-  });
-  server.begin();
+  bootingLogo();
 }
 
-/* ================= LOOP ================= */
-void loop() {
-  server.handleClient();
+void loop(){
+  unsigned long currentMillis = millis();
+  if(currentMillis - lastBlink > 500){
+    blinkState = !blinkState;
+    lastBlink = currentMillis;
+  }
+
+  // Baca sensor nyata
+  float fuelVoltage = analogRead(PIN_FUEL)*(3.3/1023.0);
+  fuel = voltageToPercent(fuelVoltage, 0.3, 2.7);
+
+  float battVoltage = analogRead(PIN_BATT)*(3.3/1023.0);
+  battery = voltageToPercent(battVoltage, 2.9, 3.3);
+
+  // Input lampu sein & pintu
+  leftSignal = !digitalRead(PIN_LEFT_SIGNAL) && blinkState;
+  rightSignal = !digitalRead(PIN_RIGHT_SIGNAL) && blinkState;
+  doorOpen = !digitalRead(PIN_DOOR);
+
+  // Simulasi speed & RPM
+  speed = (speed+1)%120;
+  rpm = (rpm+50)%4000;
+  odometer += speed/100; // simulasi km
+
+  // Clear display
+  display.clearDisplay();
+
+  // Logo kecil
+  display.drawBitmap(0,0, mercedesLogo,16,16, SSD1306_WHITE);
+
+  // Speedometer melingkar
+  int centerX=64, centerY=32, radius=25;
+  display.drawCircle(centerX,centerY,radius,SSD1306_WHITE);
+  float angle = map(speed,0,120,-90,90);
+  float rad = angle*3.14159/180.0;
+  int xEnd=centerX+radius*cos(rad);
+  int yEnd=centerY+radius*sin(rad);
+  display.drawLine(centerX,centerY,xEnd,yEnd,SSD1306_WHITE);
+  display.setTextSize(2);
+  display.setCursor(50,0); display.print(speed);
+
+  // RPM melingkar
+  int rpmRadius=18;
+  float rpmAngle=map(rpm,0,4000,-90,90);
+  float rpmRad=rpmAngle*3.14159/180.0;
+  int rpmX=centerX+rpmRadius*cos(rpmRad);
+  int rpmY=centerY+rpmRadius*sin(rpmRad);
+  display.drawLine(centerX,centerY,rpmX,rpmY,SSD1306_WHITE);
+  display.setTextSize(1);
+  display.setCursor(centerX-10,centerY+10);
+  display.print("RPM");
+
+  // Fuel bar
+  display.drawRect(0,55,64,8,SSD1306_WHITE);
+  display.fillRect(0,55,fuel*64/100,8,SSD1306_WHITE);
+  display.setCursor(0,46); display.print("FUEL");
+
+  // Battery bar
+  display.drawRect(70,55,58,8,SSD1306_WHITE);
+  display.fillRect(70,55,battery*58/100,8,SSD1306_WHITE);
+  display.setCursor(70,46); display.print("BATT");
+
+  // Lampu sein
+  display.setCursor(0,36); display.print("L:"); if(leftSignal) display.print("<");
+  display.setCursor(30,36); display.print("R:"); if(rightSignal) display.print(">");
+
+  // Door
+  display.setCursor(70,36); display.print("DOOR:"); display.print(doorOpen?"OPEN":"CLOSE");
+
+  // Odometer
+  display.setTextSize(1);
+  display.setCursor(50,58);
+  display.print("ODO:"); display.print(odometer);
+
+  display.display();
+  delay(100);
 }
